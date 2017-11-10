@@ -1,0 +1,60 @@
+---
+title: "Projet DM"
+author: "Rochd"
+date: "25 octobre 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## DATASET
+
+```{r}
+df<-read.csv("train.csv")
+df$Date<- as.POSIXct(df$Date ,format = "%Y-%m-%d")
+```
+
+```{r}
+
+```
+
+
+```{r}
+library(Amelia)
+#missmap(df, main = "Données manquantes/Données observées")
+sapply(df,function(x) sum(is.na(x)))
+nrow(df)
+```
+
+
+```{r}
+store<-read.csv("store.csv",na.strings = "")
+store$Promo2Since <- as.POSIXct(paste(store$Promo2SinceYear,store$Promo2SinceWeek, 1, sep = "-"),format = "%Y-%U-%u")
+store$CompetitionOpenSince<- as.POSIXct(paste(store$CompetitionOpenSinceYear ,store$CompetitionOpenSinceMonth , 1, sep = "-"),format = "%Y-%m-%d")
+sapply(store,function(x) sum(is.na(x)))
+
+#df$CompetitionOpenSince <- as.Date(df$CompetitionOpenSince ,format = "%Y-%m-%d")
+#df$Promo2Since <- as.Date(df$Promo2Since ,format = "%Y-%m-%d")
+
+store$CompetitionOpenSinceMonth<-NULL
+store$CompetitionOpenSinceYear<-NULL
+store$Promo2SinceWeek<-NULL
+store$Promo2SinceYear<-NULL
+
+```
+
+```{r}
+mergedData<-merge(df,store)
+```
+```{r}
+#mergedData[mergedData$Date<mergedData$Promo2Since]
+
+#which(mergedData$Date<mergedData$Promo2Since)
+Inferieur=mergedData[which(mergedData$Date<mergedData$Promo2Since & mergedData$Store==213),]
+mean(Inferieur$Sales)
+superieur=mergedData[which(mergedData$Date>=mergedData$Promo2Since & mergedData$Store==213),]
+mean(superieur$Sales)
+```
+
