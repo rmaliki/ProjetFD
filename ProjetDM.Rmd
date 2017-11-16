@@ -21,9 +21,29 @@ df$Date<- as.POSIXct(df$Date ,format = "%Y-%m-%d")
 ```
 
 
-Base de tests :
+Base de tests et des magasins :
 ```{r}
 test<-read.csv("test.csv")
+store<-read.csv("store.csv",na.strings = "")
+```
+
+### Ajustements des variables:
+
+```{r}
+df$DayOfWeek<-factor(df$DayOfWeek)
+test$DayOfWeek<-factor(test$DayOfWeek)
+
+df$Open<-factor(df$Open)
+test$Open<-factor(test$Open)
+
+df$Promo<-factor(df$Promo)
+test$Promo<-factor(test$Promo)
+
+df$SchoolHoliday<-factor(df$SchoolHoliday)
+test$SchoolHoliday<-factor(test$SchoolHoliday)
+
+store$Promo2<-factor(store$Promo2)
+
 ```
 
 
@@ -31,7 +51,7 @@ test<-read.csv("test.csv")
 Pour la base contenant les magasins nous allons adapter les attributs "CompetitionOpenSinceMonth" et "CompetitionOpenSinceYear"ansi que "Promo2SinceWeek" et "Promo2SinceYear" pour représenter une date précise sous le format "AAAA-MM-JJ" du calendrier POSIXct. 
 
 ```{r}
-store<-read.csv("store.csv",na.strings = "")
+
 store$Promo2Since <- as.POSIXct(paste(store$Promo2SinceYear,store$Promo2SinceWeek, 1, sep = "-"),format = "%Y-%U-%u")
 store$CompetitionOpenSince<- as.POSIXct(paste(store$CompetitionOpenSinceYear ,store$CompetitionOpenSinceMonth , 1, sep = "-"),format = "%Y-%m-%d")
 
@@ -93,17 +113,59 @@ ggplot(df[df$Sales!=0,], aes(Sales))+geom_histogram(bins = 100)
 ```
 
 
-#
+#Regression linéaire
 
-
+##Préparation des données :
 
 ```{r}
+df$Customers<-NULL
 train <-merge(df,store)
+test0<-merge(test,store)
+#converting "POSIXct" data to a continuou variable in order to fit the model ( seconds since the beginning of January 1, 1970)
+train$Date<-unclass(train$Date)
+test0$Date<-unclass(test0$Date)
+
+train$Promo2Since<-unclass(train$Promo2Since)
+test0$Promo2Since<-unclass(test0$Promo2Since)
+
+train$CompetitionOpenSince<-unclass(train$CompetitionOpenSince)
+test0$CompetitionOpenSince<-unclass(test0$CompetitionOpenSince)
 
 #which(mergedData$Date<mergedData$Promo2Since)
-Inferieur=train[which(train$Date<train$Promo2Since & train$Store==213),]
-mean(Inferieur$Sales)
-superieur=train[which(train$Date>=train$Promo2Since & train$Store==213),]
-mean(superieur$Sales)
+#Inferieur=train[which(train$Date<train$Promo2Since & train$Store==213),]
+#mean(Inferieur$Sales)
+#superieur=train[which(train$Date>=train$Promo2Since & train$Store==213),]
+#mean(superieur$Sales)
+```
+
+Nous testerons le modèle linéaire suivant :
+```{r}
+features<-colnames(train)[!(colnames(train) %in% c("Sales","Customers"))]
+train$Date<-as.integer(train$Date)
+train$Promo2Since<-as.integer(train$Promo2Since)
+train$CompetitionOpenSince<-as.integer(train$CompetitionOpenSince)
+#function to set missing values to 0
+setMissingVal<-function(dataset){
+  for (i in 1:ncol(dataset)){
+    if (is.factor(dataset[,i])&prod(is.na(dataset[,i]))==0)
+      levels(dataset[,i])<-append(levels(dataset[,i]),0)
+    dataset[,i][is.na(dataset[,i])] <- 0
+    
+  }
+  return (dataset)
+}
+
+train<-setMissingVal(train)
+#model<-lm(as.vector(train$Sales)~features] , na.action = na.pass )
+model<-lm(Sales~Store+DayOfWeek+Open+Promo+StateHoliday+SchoolHoliday+StoreType+Assortment+CompetitionDistance+Promo2+CompetitionOpenSince ,data = train, na.action = na.pass )
+```
+
+#Prédictions :
+
+```{r}
+test0$Date<-as.integer(test0$Date)
+test0$Promo2Since<-as.integer(test0$Promo2Since)
+test0$CompetitionOpenSince<-as.integer(test0$CompetitionOpenSince)
+predict(model,test0)
 ```
 
