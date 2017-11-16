@@ -1,0 +1,218 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+getwd()
+setwd("/Users/mac/Desktop/ISA/UV213_DataMining/Projet/DataSet/")
+Train=read.csv("train.csv",header= TRUE)
+Test=read.csv("test.csv",header=TRUE)
+Store=read.csv("store.csv", header= TRUE)
+
+```
+
+```{r}
+library(zoo)
+library(ggplot2)
+library(forecast)
+library(data.table)
+library(corrplot)
+library(ggplot2)
+```
+
+
+)
+```{r}
+
+# Convertir Date en type Date
+Train$Date <- as.Date(Train$Date)
+Test$Date <- as.Date(Test$Date)
+
+#Convertir les variables en factor
+Train$SchoolHoliday= as.factor(Train$SchoolHoliday)
+Train$Promo= as.factor(Train$Promo)
+Train$Open= as.factor(Train$Open)
+Train$DayOfWeek=as.factor(Train$DayOfWeek)
+# Convertir Promo2since en date 
+Store$Promo2Since <- as.POSIXct(paste(Store$Promo2SinceYear, Store$Promo2SinceWeek, 1, sep = "-"),format = "%Y-%U-%u")
+Store$Promo2Since <- as.Date(Store$Promo2Since)
+Store$Promo2SinceWeek <- NULL
+Store$Promo2SinceYear <- NULL
+
+# Convertir Competitionopensince en date
+Store$CompetitionOpenSince <- as.yearmon(paste(Store$CompetitionOpenSinceYear,                Store$CompetitionOpenSinceMonth, sep = "-"))
+Store$CompetitionOpenSinceMonth <- NULL
+Store$CompetitionOpenSinceYear <- NULL
+Store$Promo2 <- as.factor(Store$Promo2)
+```
+
+```{r}
+### MERGED DATABASE ###
+MergedData=merge(Train,Store, by="Store")
+```
+
+
+
+
+```{r}
+                    
+                      # HISTORIQUE DES DONNEES #
+
+
+####### TRAIN SET ###############
+## Store : 1 a 1115
+## Dayofweek : 1 a 7
+## Data : 1/1/2013 a 31/7/2015 - 2 ans et 7 mois
+## Sales: 0 a 41551
+## Customers : 0 a 7388
+## Open : 0 or 1
+## Promo : 0 or 1
+## State Holiday : a - public // b - Easter // c - Christmas // 0 - None
+## School holiday 0 or 1 
+
+
+
+####### STORE SET ##############
+# Storetype = a -b -c -d
+# Assortment a- Basic // b- Extra // c- Extended
+# Competition distance 20 - 75860
+# Competition open .. month - year
+# Promo2  day-month-year
+# Promo interval 
+```
+
+
+ #### EXPLORATORY DATA ANALYSIS ####
+ 
+Etude du nombre de clients affluent aux différents magasins.
+```{r}
+#### CUSTOMERS ####
+
+correlation_SalesCust=cor(Train$Sales, Train$Customers)
+correlation_SalesCust
+
+Moy_clients1=mean(dplyr::filter(Train,Train$Promo=='1',Train$Open==1)$Customers)
+Moy_clients0=mean(dplyr::filter(Train,Train$Promo=='0',Train$Open==1)$Customers)
+Moy_clients1>Moy_clients0
+
+boxplot(dplyr::filter(Train,Train$Open==1)$Customers ~ dplyr::filter(Train,Train$Open==1)$Promo, xlab="Promo",ylab="Nombre de clients")
+
+
+```
+## Forte corrélation entre les ventes et le nombre de clients
+## Pretty Obvious though :)
+## La variable customers ne figure pas sur le test set fourni par Rossmann 
+## Deux approches possibles alors : Soit on predit le nombre de clients pour chaque store puis on calcule les ventre OU on elmine les informations concernants le nombre de clients
+ 
+ 
+ 
+ 
+
+ 
+    Etude du Store type : Ventes - Frequence de chaque type - WE 
+```{r}
+####### STORE TYPE ############
+boxplot(MergedData$Sales~MergedData$StoreType)
+
+
+# Distribution des store type #
+Q=data.frame(Count=c(600,17,148,348))
+PQ1=ggplot(Q,aes(x=c("a","b","c","d"),y=Q$Count))
+PQ1+geom_bar(stat="identity",fill="steelblue", width=0.5)+labs(x="Store Type", y = "Store Count")
+
+# Distribution des ventes en fonction du type #
+Storea=mean(dplyr::filter(MergedData,MergedData$Open==1,MergedData$StoreType=='a')$Sales)
+Storeb=mean(dplyr::filter(MergedData,MergedData$Open==1,MergedData$StoreType=='b')$Sales)
+Storec=mean(dplyr::filter(MergedData,MergedData$Open==1,MergedData$StoreType=='c')$Sales)
+Stored=mean(dplyr::filter(MergedData,MergedData$Open==1,MergedData$StoreType=='d')$Sales)
+
+R=data.frame(Count=c(6925,10231,6932,6822))
+PQ3=ggplot(R,aes(x=c("a","b","c","d"),y=R$Count))
+PQ3+geom_bar(stat="identity",fill="steelblue", width=0.5)+labs(x="Store Type", y = "Sales Count")
+
+########## Ouverture des magasins durant le weekend #######
+
+b_OuvertsDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==1 & MergedData$StoreType=='b'))
+
+b_OuvertsSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==1 & MergedData$StoreType=='b'))
+b_FermesDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==0 & MergedData$StoreType=='b'))
+
+b_FermeSamedi =length(which(MergedData$DayOfWeek==6 & MergedData$Open==0 & MergedData$StoreType=='b'))
+
+c_OuvertsSamediE=length(which(MergedData$DayOfWeek==6 & MergedData$Open==1 & MergedData$StoreType=='c'))
+c_FermesSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==0 & MergedData$StoreType=='c'))
+
+c_OuvertsDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==1 & MergedData$StoreType=='c'))
+c_FermesDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==0 & MergedData$StoreType=='c'))
+
+a_OuvertsSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==1 & MergedData$StoreType=='a'))
+a_FermesSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==0 & MergedData$StoreType=='a'))
+
+a_OuvertsDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==1 & MergedData$StoreType=='a'))
+a_FermesDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==0 & MergedData$StoreType=='a'))
+
+### ON PEUT SUPPOSER QUE LES MAGASINS A SONT FERMES LES DIMANCHE ET OVERT LES SAMEDIS ( A CROISER AVEC LES FETES ) !
+
+d_OuvertsSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==1 & MergedData$StoreType=='d'))
+d_FermesSamedi=length(which(MergedData$DayOfWeek==6 & MergedData$Open==0 & MergedData$StoreType=='d'))
+
+d_OuvertsDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==1 & MergedData$StoreType=='d'))
+d_FermesDimanche=length(which(MergedData$DayOfWeek==7 & MergedData$Open==0 & MergedData$StoreType=='d'))
+
+
+countsdimanche =data.frame(supp=rep(c("Fermé","Ouvert"), each=4),                         stores=rep(c("a","b","c","d"),2), 
+counts=c(a_FermesDimanche,b_FermesDimanche,c_FermesDimanche,d_FermesDimanche,a_OuvertsDimanche,b_OuvertsDimanche,c_OuvertsDimanche,d_OuvertsDimanche))
+ggplot(data=countsdimanche, aes(x=stores, y=counts, fill=supp)) +geom_bar(stat="identity", position=position_dodge())
+
+```
+
+## Les stores de type b ont la plus grande moyenne de vente mais sont les moins presents 
+## a c et d ont des moyennes quasi-similaires 
+## ON PEUT SUPPOSER QUE LES MAGASINS B SONT OUVERTS LES WEEKEND ( A CROISER AVEC LES FETES ) !
+## ON PEUT SUPPOSER QUE LES MAGASINS A - C et D SONT FERMES LES DIMANCHE ET OVERT LES SAMEDIS ( A CROISER AVEC LES FETES ) !
+
+### On peut supprimer les lignes ou open=0 vu que ca ne nous apportera rien en termes d'apprentissage###
+
+
+
+
+
+```{r}
+####### Promotions #######
+
+## How many stores are involved in a long term promotion ? ##
+S=data.frame(Count=c(571,544))
+PQ2=ggplot(S,aes(x=c("Running a long term promo","Not running a long term promo"),y=S$Count))
+PQ2+geom_bar(stat="identity",fill="steelblue", width=0.5)+labs(x="Store Type", y = "Store Count")
+
+
+## what is the effect of a single day promotion on Sales ? ##
+boxplot(dplyr::filter(MergedData,MergedData$Open==1)$Sales~dplyr::filter(MergedData,MergedData$Open==1)$Promo)
+# Augmentation de la mediane 
+
+
+```
+```{r}
+####  Nombre de Stores qui figurent sur la train set et le test set ####
+
+stores_id <- as.numeric(as.character(unique(Test$Store)))
+A <- Train[Train$Store %in% stores_id,]
+nrow(A)
+
+
+```
+## On peut egalement enlever les id des stores qui ne figurent pas sur le test set vu que l'apprentissage se fait sur chaque store en particulier.
+
+
+```{r}
+
+
+## series temporelles ?
+## Tracer l'evolution des ventes/clients pour chaque date 
+summary(Train)
+summary(Store)
+summary(MergedData)
+```
+
