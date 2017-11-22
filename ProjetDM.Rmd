@@ -141,9 +141,9 @@ test0$CompetitionOpenSince<-unclass(test0$CompetitionOpenSince)
 Nous testerons le modèle linéaire suivant :
 ```{r}
 features<-colnames(train)[!(colnames(train) %in% c("Sales","Customers"))]
-train$Date<-as.integer(train$Date)
-train$Promo2Since<-as.integer(train$Promo2Since)
-train$CompetitionOpenSince<-as.integer(train$CompetitionOpenSince)
+#train$Date<-as.integer(train$Date)
+#train$Promo2Since<-as.integer(train$Promo2Since)
+#train$CompetitionOpenSince<-as.integer(train$CompetitionOpenSince)
 #function to set missing values to 0
 setMissingVal<-function(dataset){
   for (i in 1:ncol(dataset)){
@@ -155,17 +155,97 @@ setMissingVal<-function(dataset){
   return (dataset)
 }
 
-train<-setMissingVal(train)
+#train<-setMissingVal(train)
 #model<-lm(as.vector(train$Sales)~features] , na.action = na.pass )
-model<-lm(Sales~Store+DayOfWeek+Open+Promo+StateHoliday+SchoolHoliday+StoreType+Assortment+CompetitionDistance+Promo2+CompetitionOpenSince ,data = train, na.action = na.pass )
+#model<-lm(Sales~Store+DayOfWeek+Open+Promo+StateHoliday+SchoolHoliday+StoreType+Assortment+CompetitionDistance+Promo2+CompetitionOpenSince ,data = train, na.action = na.pass )
+
+
 ```
 
 #Prédictions :
 
 ```{r}
-test0$Date<-as.integer(test0$Date)
-test0$Promo2Since<-as.integer(test0$Promo2Since)
-test0$CompetitionOpenSince<-as.integer(test0$CompetitionOpenSince)
-predict(model,test0)
+#test0$Date<-as.integer(test0$Date)
+#test0$Promo2Since<-as.integer(test0$Promo2Since)
+#test0$CompetitionOpenSince<-as.integer(test0$CompetitionOpenSince)
+#predict(model,test0)
+```
+
+```{r}
+library(xgboost)
+xgb <- xgboost(data = data.matrix(sapply(train[,features],as.numeric)), 
+ label = as.numeric(train$Sales), 
+ eta = 0.1,
+ max_depth = 30, 
+ nround=30, 
+ subsample = 0.5,
+ colsample_bytree = 0.5,
+ seed = 1,
+ eval_metric = "rmse",
+ objective = "reg:linear",
+ nthread = -1
+)
+```
+
+```{r}
+nw_train<-xgb.DMatrix(data=data.matrix(sapply(train[,features],as.numeric)), 
+ label = as.numeric(train$Sales))
+pred <- predict(xgb, nw_train)
+```
+
+
+
+```{r}
+hist(log(scale(train$Sales-pred)),breaks =100
+     )
+shapiro.test(sample(train$Sales-pred,size = 5000
+                    ))
+qqnorm(log(scale(train$Sales-pred)))
+```
+
+```{r}
+test0<-test0[order(test0$Id),]
+nw_test<-xgb.DMatrix(data=data.matrix(sapply(test0[,features],as.numeric)))
+pred <- predict(xgb, nw_test)
+submission <- data.frame(Id=test0$Id, Sales=pred)
+write.csv(submission, "xgboost.csv",row.names=F)
+```
+
+
+### Amélioration :
+
+Nous allons considérer uniquement le cas où les magasins sont ouverts. En effet, si la variable "Open" vaut 0 nous allons affecter directement 0 pour les ventes.
+
+```{r}
+train[train$Open==0 & train$Sales!=0,]
+```
+
+
+```{r}
+library(xgboost)
+xgb <- xgboost(data = data.matrix(sapply(train[,features][train$Open!=0,],as.numeric)), 
+ label = as.numeric(train[train$Open!=0,]$Sales), 
+ eta = 0.1,
+ max_depth = 20, 
+ nround=25, 
+ subsample = 0.5,
+ colsample_bytree = 0.5,
+ seed = 1,
+ eval_metric = "rmse",
+ objective = "reg:linear",
+ nthread = -1
+)
+```
+
+
+```{r}
+test0<-test0[order(test0$Id),]
+nw_test<-xgb.DMatrix(data=data.matrix(sapply(test0[,features][test0$Open!=0,],as.numeric)))
+pred <- predict(xgb, nw_test)
+s1 <- data.frame(Id=test0[test0$Open!=0,]$Id, Sales=pred)
+s2<-data.frame(Id=test0[test0$Open==0,]$Id, Sales=0)
+submission<-rbind(s1,s2)
+submission<-submission[order(submission$Id),]
+write.csv(submission, "xgboost2.csv",row.names=F)
 ```
 
