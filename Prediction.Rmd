@@ -1,0 +1,357 @@
+
+## Chargement des donnees
+Training set : train.csv
+Test set : test.csv
+Information sur les magasins : store.csv
+States ou se trouvent les magasins : ST.csv
+Meteo 
+Holidays
+
+
+#### DATA ####
+```{r}
+getwd()
+setwd("/Users/mac/Desktop/ISA/UV213_DataMining/Projet/Dataset")
+Train<-read.csv("train.csv",header = TRUE)
+Train$Date<- as.POSIXct(Train$Date ,format = "%Y-%m-%d")
+Store=read.csv("store.csv", header = TRUE, na.strings = "")
+Test= read.csv("test.csv", header =  TRUE)
+```
+
+#### EXTERNAL DATA ####
+```{r}
+### States ou se trouve chaque magasin
+States=read.csv("ST.csv", header = TRUE)
+States$X.1 <- NULL
+States$X <- NULL
+
+### Weather ###
+Bavaria= read.csv("Bavaria.csv", header = TRUE)
+Bavaria$State= rep('Bavaria',length(Bavaria$Date))
+
+#############
+Berlin= read.csv("Berlin.csv", header = TRUE)
+Berlin$State= rep('Berlin',length(Berlin$Date))
+
+############
+Hesse= read.csv("Hesse.csv", header = TRUE)
+Hesse$State= rep('Hesse',length(Hesse$Date))
+
+############
+NorthRhine= read.csv("NorthRhine.csv", header = TRUE)
+NorthRhine$State= rep('North Rhine-Westphalia',length(NorthRhine$Date))
+
+############
+Saxony= read.csv("Saxony.csv", header = TRUE)
+Saxony$State= rep('Saxony',length(Saxony$Date))
+
+############
+SaxonyAnhalt= read.csv("SaxonyAnhalt.csv", header = TRUE)
+SaxonyAnhalt$State= rep('Saxony-Anhalt',length(SaxonyAnhalt$Date))
+
+############
+SchleswigHolstein= read.csv("SchleswigHolstein.csv", header = TRUE)
+SchleswigHolstein$State= rep('Schleswig-Holstein',length(SchleswigHolstein$Date))
+
+############
+RhinelandPalatinate= read.csv("RhinelandPalatinate.csv", header = TRUE)
+RhinelandPalatinate$State= rep('Rhineland-Palatinate',length(RhinelandPalatinate$Date))
+
+############
+Bremen= read.csv("Bremen.csv", header = TRUE)
+Bremen$State= rep('Bremen',length(Bremen$Date))
+
+############
+LoweSaxony= read.csv("LowerSaxony.csv", header = TRUE)  
+LoweSaxony$State= rep('Lower-Saxony',length(LoweSaxony$Date))
+
+############
+Hamburg= read.csv("Hamburg.csv", header = TRUE)
+Hamburg$State= rep('Hamburg',length(Hamburg$Date))
+
+############
+Thuringen= read.csv("Thüringen.csv", header = TRUE) 
+Thuringen$State=rep('Thuringia',length(Thuringen$Date))
+
+############
+Baden= read.csv("BadenWurttemberg.csv", header = TRUE)  
+Baden$State=rep('Baden-Württemberg',length(Baden$Date))
+
+WeatherStores=rbind(Bavaria,Berlin,Hesse,NorthRhine,Hamburg,SaxonyAnhalt,Saxony,LoweSaxony,Thuringen,Baden,Bremen,RhinelandPalatinate,SchleswigHolstein)
+```
+
+#### JOINTURE DES TABLES ####
+
+```{r}
+MergedData=merge(Train,Store, by="Store")
+MergedData=merge(MergedData, States, by="Store")
+MergedData=merge(MergedData, WeatherStores, by=c("State","Date"))
+
+```
+
+
+#### AJUSTEMENT DU TYPE DES VARIABLES ###
+```{r}
+MergedData$CompetitionOpenSince<- as.POSIXct(paste(MergedData$CompetitionOpenSinceYear ,MergedData$CompetitionOpenSinceMonth , 1, sep = "-"),format = "%Y-%m-%d")
+## Info redondante
+MergedData$CompetitionOpenSinceMonth <-NULL
+MergedData$CompetitionOpenSinceYear <-NULL
+
+#############
+MergedData$Promo2Since <- as.POSIXct(paste(MergedData$Promo2SinceYear,MergedData$Promo2SinceWeek, 1, sep = "-"),format = "%Y-%U-%u")
+MergedData$Promo2SinceWeek <- NULL
+MergedData$Promo2SinceYear <- NULL
+
+##############
+MergedData$DayOfWeek<-factor(MergedData$DayOfWeek)
+Test$DayOfWeek<-factor(Test$DayOfWeek)
+
+#############
+MergedData$Open<-factor(MergedData$Open)
+Test$Open<-factor(Test$Open)
+
+###############
+MergedData$Promo<-factor(MergedData$Promo)
+Test$Promo<-factor(Test$Promo)
+
+################
+MergedData$SchoolHoliday<-factor(MergedData$SchoolHoliday)
+Test$SchoolHoliday<-factor(Test$SchoolHoliday)
+
+###################
+```
+
+####  NOUVELLES FEATURES ####
+
+
+```{r}
+### Nombre de jours depuis que la competition est la ###
+MergedData$Competition=((MergedData$Date -MergedData$CompetitionOpenSince))/(3600*24)
+MergedData$CompetitionOpenSince  <- NULL
+
+
+### Nombre de jours depuis que la promo 2 est lancee
+MergedData$Promo2=((MergedData$Date -MergedData$Promo2Since))/(3600*24)
+MergedData$Promo2Since  <- NULL
+
+### Moyenne de vente par store sur toute la periode
+MergedData$MoyenneVentesStore <- rep(0,length(MergedData$Date))
+for (i in Store$Store){
+df=dplyr::filter(MergedData,MergedData$Store==i)
+ind=which(MergedData$Store==i)
+Moyenne=(mean(log(df$Sales+1)))
+MergedData$MoyenneVentesStore[ind] <- Moyenne
+}
+
+### Moyenne de vente par jour de la semaine
+MergedData$MoyenneVentesJour <- rep(0,length(MergedData$Date))
+for ( e in 1:7){
+df=dplyr::filter(MergedData,MergedData$DayOfWeek==e)
+ind=which(MergedData$DayOfWeek==e)
+Moyenne=(mean(log(df$Sales+1)))
+MergedData$MoyenneVentesJour[ind] <- Moyenne
+}
+```
+
+
+```{r}
+write.csv(MergedData,'MergedDF.csv')
+```
+
+
+
+#### TRAIN AND TEST SET  ####
+
+```{r}
+library(xgboost)
+
+trainingset=data.frame(Store=MergedData$Store,Date=MergedData$Date, State=MergedData$State, DayOfWeek=MergedData$DayOfWeek, MoyenneVentesJour=MergedData$MoyenneVentesJour,Sales= MergedData$Sales,Customers=MergedData$Customers,MoyenneVentesStore=MergedData$MoyenneVentesStore,Open=MergedData$Open,StateHoliday= MergedData$StateHoliday, SchoolHoliday=MergedData$SchoolHoliday, CompetitionDistance=MergedData$CompetitionDistance,Competition=MergedData$Competition,Promo2=MergedData$Promo2, Promo=MergedData$Promo, StoreType= MergedData$StoreType, AssortmentType=MergedData$Assortment)
+```
+
+
+```{r}
+
+testingset=data.frame(Test)
+testingset=merge(testingset,States,by='Store')
+testingset=merge(testingset,Store, by='Store')
+```
+
+
+```{r}
+testingset$Date<- as.POSIXct(testingset$Date ,format = "%Y-%m-%d")
+testingset$CompetitionOpenSince<- as.POSIXct(paste(testingset$CompetitionOpenSinceYear ,testingset$CompetitionOpenSinceMonth , 1, sep = "-"),format = "%Y-%m-%d")
+# ## Info redondante
+testingset$CompetitionOpenSinceMonth <-NULL
+testingset$CompetitionOpenSinceYear <-NULL
+#
+# #############
+testingset$Promo2Since <- as.POSIXct(paste(testingset$Promo2SinceYear,testingset$Promo2SinceWeek, 1, sep = "-"),format = "%Y-%U-%u")
+ testingset$Promo2SinceWeek <- NULL
+ testingset$Promo2SinceYear <- NULL
+
+# ##############
+ testingset$DayOfWeek<-factor(testingset$DayOfWeek)
+
+# #############
+ testingset$Open<-factor(testingset$Open)
+
+# ###############
+ testingset$Promo<-factor(testingset$Promo)
+
+# ################
+ testingset$SchoolHoliday<-factor(testingset$SchoolHoliday)
+```
+
+
+```
+
+
+#### PREPARER LE TEST SET ####
+```{r}
+
+# ### COMPETITION
+# testingset$Competiton=((testingset$Date -testingset$CompetitionOpenSince))/(3600*24)
+# testingset$CompetitionOpenSince <- NULL
+# 
+# ### Nombre de jours depuis que la promo 2 est lancee
+# testingset$Promo2=((testingset$Date -testingset$Promo2Since))/(3600*24)
+# testingset$Promo2Since  <- NULL
+# 
+# ### Moyenne de vente par store sur toute la periode
+# testingset$MoyenneVentesStore <- rep(0,length(testingset$Date))
+# for (i in Store$Store){
+# df=dplyr::filter(MergedData,MergedData$Store==i)
+# ind=which(testingset$Store==i)
+# Moyenne=log(mean(df$Sales))
+# testingset$MoyenneVentesStore[ind] <- Moyenne
+# }
+# 
+# ### Moyenne de vente par jour de la semaine
+# testingset$MoyenneVentesJour <- rep(0,length(testingset$Date))
+# for ( e in 1:7){
+# df=dplyr::filter(MergedData,MergedData$DayOfWeek==e)
+# ind=which(testingset$DayOfWeek==e)
+# Moyenne=log(mean(df$Sales))
+# testingset$MoyenneVentesJour[ind] <- Moyenne
+# }
+```
+
+
+
+######### FOR NOOOOOW #####
+
+```{r}
+trainingset=trainingset[order(trainingset$Date),]
+
+Open=dummy(trainingset$Open)
+Dayofweek=dummy(trainingset$DayOfWeek)
+StateHol=dummy(trainingset$StateHoliday)
+SchoolHoli=dummy(trainingset$SchoolHoliday)
+Promo=dummy(trainingset$Promo)
+Typee=dummy(trainingset$StoreType)
+Assortment=dummy(trainingset$AssortmentType)
+trainingset=cbind(trainingset,Open,Dayofweek,StateHol,SchoolHoli,Promo,Typee,Assortment)
+trainingset$Open <- NULL
+trainingset$Promo <- NULL
+trainingset$StoreType <- NULL
+trainingset$AssortmentType <- NULL
+trainingset$StateHoliday <- NULL
+trainingset$SchoolHoliday <- NULL
+trainingset$DayOfWeek <- NULL
+trainingset$Sales = log( trainingset$Sales+1)
+
+TestBis=trainingset[964805:1017209,]
+sales = exp(TestBis$Sales)-1
+TestBis$Customers <- NULL
+TestBis$Sales <- NULL
+TrainBis=trainingset[0:964804,]
+```
+
+#### TRYING DUMMY VARIABLES ###
+
+
+```{r}
+library('dummies')
+Open=dummy(TrainBis$Open)
+Dayofweek=dummy(TrainBis$DayOfWeek)
+StateHol=dummy(TrainBis$StateHoliday)
+SchoolHoli=dummy(TrainBis$SchoolHoliday)
+Promo=dummy(TrainBis$Promo)
+Typee=dummy(TrainBis$StoreType)
+Assortment=dummy(TrainBis$AssortmentType)
+TrainBis=cbind(TrainBis,Open,Dayofweek,StateHol,SchoolHoli,Promo,Typee,Assortment)
+TrainBis$Open <- NULL
+TrainBis$Promo <- NULL
+TrainBis$StoreType <- NULL
+TrainBis$AssortmentType <- NULL
+TrainBis$StateHoliday <- NULL
+TrainBis$SchoolHoliday <- NULL
+TrainBis$DayOfWeek <- NULL
+
+Open=dummy(TestBis$Open)
+Dayofweek=dummy(TestBis$DayOfWeek)
+StateHol=dummy(TestBis$StateHoliday)
+SchoolHoli=dummy(TestBis$SchoolHoliday)
+Promo=dummy(TestBis$Promo)
+Typee=dummy(TestBis$StoreType)
+Assortment=dummy(TestBis$AssortmentType)
+TestBis=cbind(TestBis,Open,Dayofweek,StateHol,SchoolHoli,Promo,Typee,Assortment)
+TestBis$Open <- NULL
+TestBis$Promo <- NULL
+TestBis$StoreType <- NULL
+TestBis$AssortmentType <- NULL
+TestBis$StateHoliday <- NULL
+TestBis$SchoolHoliday <- NULL
+TestBis$DayOfWeek <- NULL
+
+```
+
+```{r}
+RMSPE <- function(preds, dtrain) {
+  labels <- getinfo(dtrain, "label")
+  elabs <- exp(as.numeric(labels))
+  epreds <-exp(as.numeric(preds))
+  eratio <- as.numeric((elabs-epreds)/elabs)
+  err <- mean(eratio**2)
+  return(list(metric = "RMPSE", value = sqrt(err)))
+}
+```
+
+
+
+```{r}
+xgb <- xgboost(data =  data.matrix(TrainBis), 
+ label = as.numeric(TrainBis$Sales), 
+ eta = 0.1,
+ max_depth = 10, 
+ nround=30, 
+ subsample = 0.4,
+ colsample_bytree = 0.3,
+ seed = 1,
+   eval_metric = RMSPE,
+ objective = "reg:linear",
+ nthread = -1
+)
+```
+
+
+
+```{r}
+TestBis =TestBis[order(TestBis$Date),]
+test<-xgb.DMatrix(data=data.matrix(TestBis))
+pred <- predict(xgb, test)
+pred = exp(pred)-1
+sales=trainingset$Sales[964805:1017209]
+sales = exp(sales)-1
+rmse=mean((sales-pred)^2)
+
+submission <- data.frame(Id=testingset$Id, Sales=pred)
+write.csv(submission, "xgboost.csv",row.names=F)
+```
+
+
+```{r}
+require(glmnet)
+```
+
+
