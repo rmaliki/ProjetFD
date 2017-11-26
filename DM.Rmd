@@ -1,0 +1,264 @@
+---
+title: "DM"
+author: "Rochd"
+date: "25 novembre 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Exploration des données
+
+## Chargement des données
+Nous allons charger et fusionner les bases de données en gardant uniquement les attributs nécessaires.
+
+
+
+```{r}
+df<-read.csv("train.csv")
+df$Date<- as.POSIXct(df$Date ,format = "%Y-%m-%d")
+df<-df[order(df$Date),]
+#Adding test data if submit
+test<-read.csv("test.csv")
+```
+
+
+Lecture des données des magasins :
+
+```{r}
+store<-read.csv("store.csv",na.strings = "")
+
+```
+
+
+### Ajustement des variables:
+
+```{r}
+df$Date<- as.POSIXct(df$Date ,format = "%Y-%m-%d")
+test$Date<- as.POSIXct(test$Date ,format = "%Y-%m-%d")
+
+df$DayOfWeek<-factor(df$DayOfWeek)
+test$DayOfWeek<-factor(test$DayOfWeek)
+
+df$Open<-factor(df$Open)
+test$Open<-factor(test$Open)
+
+df$Promo<-factor(df$Promo)
+test$Promo<-factor(test$Promo)
+
+df$SchoolHoliday<-factor(df$SchoolHoliday)
+test$SchoolHoliday<-factor(test$SchoolHoliday)
+
+store$Promo2<-factor(store$Promo2)
+
+```
+
+Notre data frame ne contient aucune donnée manaquante:
+```{r}
+sapply(store,function(x) sum(is.na(x)))
+```
+
+
+Visualisation des données manquantes de la base des magasins:
+```{r}
+library(Amelia)
+missmap(store, main = "Données manquantes/Données observées")
+sapply(store,function(x) sum(is.na(x)))
+
+```
+
+Pour les valeurs manquantes en relation avec le fait que le magasin participe à la promotion ou non ne causent aucun problème.
+Concernant les 3 valeurs manquantes de l'attribut "CompetitionDistance" on observe :
+```{r}
+hist(store$CompetitionDistance)
+```
+La majorité des magasins ont une distance de compétition inférieur à 5000
+On choisira donc des valeurs inférieur à 5000 pour ces données manquantes.
+
+```{r}
+store$CompetitionDistance[is.na(store$CompetitionDistance)]<-as.integer(runif(3, 0, 5000))
+```
+
+## Distribution des ventes
+ 
+La distribution des ventes lorsque le magasin est ouvert 
+```{r}
+library(ggplot2)
+ggplot(df[df$Sales!=0,], aes((Sales)))+geom_histogram(bins = 100)
+
+```
+Nous remarquons qu'il s'agit d'une loi log-normale, et puisque pour un problème de regression tous ce qui est prédit est supposé provenir d'une loi normale, nous allons plutot opter pour une prédiction des log des ventes:
+```{r}
+library(ggplot2)
+ggplot(df[df$Sales!=0,], aes(log(Sales)))+geom_histogram(bins = 100)
+
+```
+Nous observons que dans ce cas c'est plus proche d'une loi normale.
+
+
+## Customers and sales :
+```{r}
+library(ggplot2)
+ggplot(data = df,aes(x=Customers,y = Sales))+geom_point()+geom_smooth()
+
+```
+Vérification de la corrélation :
+```{r}
+cor(df$Customers,df$Sales)
+```
+Cet attribut nous aidera a bien prédire les ventes, mais malheureusement dans la base de test en rapport avec Kaggle cet attribut est absent.
+
+## Kaggle submit base
+Données manquantes de la base des tests :
+```{r}
+sapply(test,function(x) sum(is.na(x)))
+```
+Nous allons selectionner les lignes qui correspendent à ces valeurs manquantes :
+
+```{r}
+test[is.na(test$Open), ]
+```
+Ceci correspond uniquement au magasin numéro 622 : 
+```{r}
+table(test$Open[test$Store == 622])
+```
+
+Dans la majorité des cas le magasin est ouvert :
+Nous allons donc affecter des "1" aux valeurs manquantes :
+
+```{r}
+test[is.na(test$Open)&test$Store==622,]$Open<-1
+```
+
+
+## Feature engineering :
+
+Nous allons ajouter un attribut significatif en rapport avec les ventes de chaque magasin :
+```{r}
+
+df<-df[order(df$Store),]
+#Average on Store sales
+for (i in 1:nrow(store)){
+  store$LogMeanSalesByStore[i]<-log(mean(df$Sales[df$Store==i]))
+}
+#???shapiro.test(store$MeanSalesByStore)
+```
+
+Nous avons pu collecter des informations de localisation des différents magasins :
+```{r}
+storeStates<-read.csv("ST.csv")
+store<-merge(store,storeStates)
+store$State<-factor(store$State)
+```
+
+
+##Préparation des données :
+
+```{r}
+train <-merge(df,store)
+```
+```{r}
+#test for submit
+test0<-merge(test,store)
+```
+
+
+
+Nous allons séparer nos données en deux:     
+ **Une base de test contenant les 6 dernières semaines de notre data frame**     
+ **Une base d'apprentissage contenant le reste des données**        
+
+Pour cela nous allons voir la distribution des dates dans notre data Frame :
+
+```{r}
+summary(df$Date)
+```
+
+La dernière date est le 31/07/2015, la date avant 6 semaines correspond au 15/06/2015
+
+
+Base des tests et des magasins :
+```{r}
+testData<-train[train$Date>"2015-06-15",]
+trainData<-train[train$Date<="2015-06-15",]
+
+```
+
+Vérification :
+```{r}
+nrow(df)==nrow(testData)+nrow(trainData)
+```
+
+## Entrainement :
+
+Nous allons considérer uniquement le cas où les magasins sont ouverts. En effet, si la variable "Open" vaut 0 nous allons affecter directement 0 pour les ventes.
+
+
+Vérification:
+```{r}
+train[train$Open==0 & train$Sales!=0,]
+```
+```{r}
+RMSPE <- function(preds, dtrain) {
+  labels <- getinfo(dtrain, "label")
+  elabs <- exp(as.numeric(labels))
+  epreds <-exp(as.numeric(preds))
+  eratio <- as.numeric((elabs-epreds)/elabs)
+  err <- mean(eratio**2)
+  return(list(metric = "RMPSE", value = sqrt(err)))
+}
+```
+
+```{r}
+#selecting useful features
+features<-colnames(train)[!(colnames(train) %in% c("Customers","Store"))]
+```
+
+
+```{r}
+dval<-xgb.DMatrix(data = data.matrix(sapply(testData[features][testData$Open!=0,],as.numeric)),label = log(as.numeric(testData[testData$Open!=0,]$Sales)+1))
+dtrain<-xgb.DMatrix(data = data.matrix(sapply(trainData[features][trainData$Open!=0,],as.numeric)),label = log(as.numeric(trainData[trainData$Open!=0,]$Sales)+1))
+
+```
+
+
+
+
+```{r}
+param <- list(  objective           = "reg:linear", 
+                booster = "gbtree",
+                eta                 = 0.02,
+                max_depth           = 10, 
+                subsample           = 0.6,
+                colsample_bytree    = 0.7 
+                
+)
+
+xgb <- xgb.train(   params              = param, 
+                    data                = dtrain, 
+                    nrounds             = 8000, 
+                    verbose             = 2,
+                    watchlist           = list(val=dval,train=dtrain),
+                    maximize            = FALSE,
+                    feval = RMSPE
+)
+```
+
+
+```{r}
+#selecting useful features
+test0<-test0[order(test0$Id),]
+featuresTest<-c(colnames(train)[!(colnames(train) %in% c("Customers","Store","Sales","Id"))])
+
+nw_test<-xgb.DMatrix(data=data.matrix(sapply(test0[test0$Open!=0,],as.numeric)))
+s<-predict(xgb, nw_test)
+pred <- exp(s)-1
+s1 <- data.frame(Id=test0[test0$Open!=0,]$Id, Sales=pred)
+s2<-data.frame(Id=test0[test0$Open==0,]$Id, Sales=0)
+submission<-rbind(s1,s2)
+submission<-submission[order(submission$Id),]
+write.csv(submission, "xgboost4.csv",row.names=F)
+```
