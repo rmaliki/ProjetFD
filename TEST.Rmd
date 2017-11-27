@@ -1,0 +1,63 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+getwd()
+setwd("/Users/mac/Desktop/ISA/UV213_DataMining/Projet/Dataset")
+Train<-read.csv("train.csv",header = TRUE)
+Store=read.csv("store.csv", header = TRUE, na.strings = "")
+Test= read.csv("test.csv", header =  TRUE)
+```
+
+```{r}
+library('dummies')
+Merged= merge(Train,Store, by='Store')
+Merged <- Merged[Merged$Open==1,]
+Merged$Customers <- NULL
+Merged$Date <- as.POSIXct(Merged$Date ,format = "%Y-%m-%d")
+Merged$month <- as.integer(format(Merged$Date, "%m"))
+Merged$year <- as.integer(format(Merged$Date, "%y"))
+Merged$day <- as.integer(format(Merged$Date, "%d"))
+
+
+type=dummy(Merged$StoreType)
+assortment=dummy(Merged$Assortment)
+Stholi= dummy(Merged$StateHoliday)
+
+Merged$StateHoliday <- NULL
+Merged$Assortment <- NULL
+Merged$StoreType <- NULL
+
+Merged=cbind(Merged,type,assortment,Stholi)
+Train = Merged[Merged$Date < '2015-05-01',]
+Valid = Merged[Merged$Date >= '2015-05-01' & Merged$Date < '2015-06-15' , ]
+Test = Merged[Merged$Date >= '2015-06-15',]
+Test$Date <- NULL
+Train$Date <- NULL
+Valid$Date <- NULL
+```
+
+```{r}
+features<-colnames(Test)[!(colnames(Test) %in% c("Sales","PromoInterval"))]
+dval<-xgb.DMatrix(data = data.matrix(sapply(Valid[,features],as.numeric)),label = as.numeric(Valid$Sales))
+dtrain<-xgb.DMatrix(data = data.matrix(sapply(Train[,features],as.numeric)),label = as.numeric(Train$Sales))
+dtest <-xgb.DMatrix(data = data.matrix(sapply(Test[,features],as.numeric)))
+
+
+parameters = list("objective"= "reg:linear",
+                  eta=0.1, subsample=0.8, 
+                  colsample_bytree=0.8, max_depth=5,eval_model='rmse' )
+
+XGBModel = xgb.train(data = dtrain, params = parameters,
+                     nrounds = 1000, verbose = 1,  watchlist <- list(val=dval, train=dtrain)) 
+
+prediction=predict(XGBModel,dtest)
+rmse=sqrt(mean((prediction-Test$Sales)^2))
+rmse
+```
